@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Patch, Delete, Query, UseGuards } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { ProvidersService } from "./providers.service";
 import {
@@ -7,13 +7,16 @@ import {
   providerAnalyticsQuerySchema,
   providerLogsQuerySchema,
   validateApiKeySchema,
-  createProviderSchema,
   type DiscoverProviderDto,
   type ListProvidersQueryDto,
   type ProviderAnalyticsQueryDto,
   type ProviderLogsQueryDto,
   type ValidateApiKeyDto,
+  createProviderSchema,
+  updateProviderSchema,
+  testConnectionSchema,
   type CreateProviderDto,
+  type UpdateProviderDto,
 } from "./dto/provider.dto";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
@@ -43,34 +46,12 @@ export class ProvidersController {
     return this.providers.getCatalog();
   }
 
-  @Post()
-  @RequirePermissions("providers:write")
-  @ApiOperation({ summary: "Create a new provider connection" })
-  async create(@Body(new ZodValidationPipe(createProviderSchema)) dto: CreateProviderDto) {
-    return this.providers.createProvider(dto);
-  }
-
-  @Patch(":id")
-  @RequirePermissions("providers:write")
-  @ApiOperation({ summary: "Update a provider" })
-  async update(@Param("id") id: string, @Body(new ZodValidationPipe(createProviderSchema.partial())) dto: Partial<CreateProviderDto>) {
-    return this.providers.updateProvider(id, dto);
-  }
-
-  @Delete(":id")
-  @RequirePermissions("providers:write")
-  @ApiOperation({ summary: "Delete a provider" })
-  async remove(@Param("id") id: string) {
-    return this.providers.deleteProvider(id);
-  }
-
-  @Post(":id/test-connection")
+  @Get(":slug")
   @RequirePermissions("providers:read")
-  @ApiOperation({ summary: "Test connectivity to a provider" })
-  async testConnection(@Param("id") id: string) {
-    return this.providers.testConnection(id);
+  @ApiOperation({ summary: "Get a single provider by slug" })
+  async findBySlug(@Param("slug") slug: string) {
+    return this.providers.findBySlug(slug);
   }
-
 
   // ============================================================
   // API KEY VALIDATION
@@ -169,11 +150,44 @@ export class ProvidersController {
   async dashboard() {
     return this.providers.getDashboard();
   }
-  @Get(":slug")
-  @RequirePermissions("providers:read")
-  @ApiOperation({ summary: "Get a single provider by slug" })
-  async findBySlug(@Param("slug") slug: string) {
-    return this.providers.findBySlug(slug);
+
+  // ============================================================
+  // DYNAMIC PROVIDER MANAGEMENT
+  // ============================================================
+
+  @Post()
+  @RequirePermissions("providers:write")
+  @ApiOperation({ summary: "Create a new provider" })
+  async createProvider(
+    @Body(new ZodValidationPipe(createProviderSchema)) dto: CreateProviderDto
+  ) {
+    return this.providers.createProvider(dto);
   }
 
+  @Patch(":id")
+  @RequirePermissions("providers:write")
+  @ApiOperation({ summary: "Update an existing provider" })
+  async updateProvider(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateProviderSchema)) dto: UpdateProviderDto
+  ) {
+    return this.providers.updateProvider(id, dto);
+  }
+
+  @Delete(":id")
+  @RequirePermissions("providers:write")
+  @ApiOperation({ summary: "Delete a provider" })
+  async deleteProvider(@Param("id") id: string) {
+    return this.providers.deleteProvider(id);
+  }
+
+  @Post(":id/test-connection")
+  @RequirePermissions("providers:read")
+  @ApiOperation({ summary: "Test connectivity to a provider" })
+  async testConnection(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(testConnectionSchema)) _body: unknown
+  ) {
+    return this.providers.testConnection(id);
+  }
 }

@@ -32,6 +32,14 @@ export class ApiError extends Error {
 }
 
 function buildUrl(path: string, params?: RequestOptions["params"]): string {
+  // Construct a fully qualified URL for the API call. When running in
+  // a browser context we use `window.location.origin` as the base for
+  // relative URLs. In a server context (e.g. during SSR) we fall back
+  // to `http://localhost` which resolves correctly when calling from
+  // Next.js middleware or server components. We intentionally avoid
+  // stripping the protocol/host from the returned URL because doing so
+  // results in malformed URLs like ":3001/providers" when deployed on
+  // platforms such as Railway. See PR #123 for details.
   const url = new URL(
     path.startsWith("http") ? path : `${API_BASE_URL}${path}`,
     typeof window === "undefined" ? "http://localhost" : window.location.origin

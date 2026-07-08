@@ -16,7 +16,15 @@ import { RedisService } from "../../infrastructure/redis/redis.service";
 import { PROVIDER_CATALOG, getProviderBySlug, type ProviderCatalogEntry } from "./registry/provider-catalog";
 import type { LiteLLMClient } from "../litellm/litellm.client";
 import { LITELLM_LOG_CONTEXTS } from "../litellm/litellm.constants";
-import type { ListProvidersQueryDto, ProviderAnalyticsQueryDto, ProviderLogsQueryDto, ValidateApiKeyDto, DiscoverProviderDto, CreateProviderDto } from "./dto/provider.dto";
+import type {
+  ListProvidersQueryDto,
+  ProviderAnalyticsQueryDto,
+  ProviderLogsQueryDto,
+  ValidateApiKeyDto,
+  DiscoverProviderDto,
+  CreateProviderDto,
+  UpdateProviderDto,
+} from "./dto/provider.dto";
 import { buildPagination } from "../../common/dto/pagination.dto";
 
 export interface ValidationResult {
@@ -76,72 +84,116 @@ export class ProvidersService {
   }
 
   // ============================================================
-  // PROVIDER MANAGEMENT
+  // DYNAMIC PROVIDER MANAGEMENT
   // ============================================================
 
+  /**
+   * Create a new provider record in the database. This method
+   * generates a slug and litellmId automatically. If a provider with
+   * the same slug already exists an error will be thrown. See
+   * provider.dto.ts for the DTO definition.
+   */
   async createProvider(dto: CreateProviderDto) {
-    const safeSlug = dto.name
+    const slug = dto.name
       .toLowerCase()
+      .trim()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || `provider-${Date.now()}`;
-
-    let slug = safeSlug;
-    let suffix = 1;
-    while (await this.prisma.provider.findUnique({ where: { slug } })) {
-      slug = `${safeSlug}-${suffix++}`;
+      .replace(/^-+|-+$/g, "");
+    // Ensure uniqueness of slug by appending a counter if necessary
+    let uniqueSlug = slug;
+    let counter = 1;
+    while (await this.prisma.provider.findUnique({ where: { slug: uniqueSlug } })) {
+      uniqueSlug = `${slug}-${counter++}`;
     }
-
-    return this.prisma.provider.create({
+    // Generate a litellm identifier. We use a short random hash.
+    const litellmId = crypto.randomBytes(6).toString("hex");
+    const provider = await this.prisma.provider.create({
       data: {
-        litellmId: crypto.randomUUID(),
         name: dto.name,
-        slug,
+        slug: uniqueSlug,
         description: dto.description ?? null,
-        baseUrl: dto.baseUrl ?? null,
+        baseUrl: dto.baseUrl,
         region: dto.region ?? null,
-        type: "CUSTOM" as never,
-        status: "UNKNOWN" as never,
-        supportedFeatures: [],
-        metadata: {},
+        litellmId,
       },
     });
+    return provider;
   }
 
-  async updateProvider(providerId: string, dto: Partial<CreateProviderDto>) {
-    const data: Prisma.ProviderUpdateInput = {};
-    if (dto.name !== undefined) data.name = dto.name;
-    if (dto.description !== undefined) data.description = dto.description;
-    if (dto.baseUrl !== undefined) data.baseUrl = dto.baseUrl;
-    if (dto.region !== undefined) data.region = dto.region;
-
-    return this.prisma.provider.update({
-      where: { id: providerId },
-      data,
+  /**
+   * Update an existing provider record. Only the fields present in the
+   * DTO will be updated. Throws a NotFoundException if the provider
+   * does not exist.
+   */
+  async updateProvider(id: string, dto: UpdateProviderDto) {
+    const existing = await this.prisma.provider.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Provider with id '${id}' not found`);
+    }
+    // If the name is being updated regenerate the slug
+    let updatedSlug = existing.slug;
+    if (dto.name && dto.name !== existing.name) {
+      const baseSlug = dto.name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      updatedSlug = baseSlug;
+      let counter = 1;
+      while (await this.prisma.provider.findFirst({ where: { slug: updatedSlug, id: { not: id } } })) {
+        updatedSlug = `${baseSlug}-${counter++}`;
+      }
+    }
+    const provider = await this.prisma.provider.update({
+      where: { id },
+      data: {
+        name: dto.name ?? undefined,
+        slug: dto.name ? updatedSlug : undefined,
+        description: dto.description ?? undefined,
+        baseUrl: dto.baseUrl ?? undefined,
+        region: dto.region ?? undefined,
+      },
     });
+    return provider;
   }
 
-  async deleteProvider(providerId: string): Promise<{ success: boolean }> {
-    await this.prisma.provider.delete({ where: { id: providerId } });
+  /**
+   * Delete a provider record by id. Throws NotFoundException if the
+   * provider does not exist.
+   */
+  async deleteProvider(id: string) {
+    const existing = await this.prisma.provider.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException(`Provider with id '${id}' not found`);
+    }
+    await this.prisma.provider.delete({ where: { id } });
     return { success: true };
   }
 
-  async testConnection(providerId: string): Promise<{ success: boolean; latencyMs: number }> {
-    const provider = await this.prisma.provider.findUnique({ where: { id: providerId } });
-    if (!provider) throw new NotFoundException(`Provider with id '${providerId}' not found`);
-    if (!provider.baseUrl) throw new NotFoundException(`Provider '${provider.name}' has no baseUrl configured`);
-
-    const startedAt = Date.now();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-
-    try {
-      await fetch(provider.baseUrl, { method: "GET", signal: controller.signal });
-      return { success: true, latencyMs: Date.now() - startedAt };
-    } catch {
-      return { success: false, latencyMs: Date.now() - startedAt };
-    } finally {
-      clearTimeout(timeout);
+  /**
+   * Test connectivity to a provider's base URL. This performs a simple
+   * HTTP GET request to the base URL and measures the latency. It
+   * returns an object indicating whether the request succeeded and the
+   * measured latency in milliseconds.
+   */
+  async testConnection(id: string): Promise<{ success: boolean; latencyMs: number }> {
+    const provider = await this.prisma.provider.findUnique({ where: { id } });
+    if (!provider) {
+      throw new NotFoundException(`Provider with id '${id}' not found`);
     }
+    const started = Date.now();
+    let success = false;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(provider.baseUrl, { signal: controller.signal, method: "HEAD" });
+      success = res.ok;
+      clearTimeout(timeout);
+    } catch {
+      success = false;
+    }
+    const latencyMs = Date.now() - started;
+    return { success, latencyMs };
   }
 
   // ============================================================

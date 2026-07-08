@@ -114,7 +114,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      APP_URL: http://localhost:3001
       # Database
       DATABASE_URL: postgresql://nexus:nexus_password@postgres:5432/nexus?schema=public
       DIRECT_URL: postgresql://nexus:nexus_password@postgres:5432/nexus?schema=public
@@ -173,25 +172,6 @@ services:
     networks:
       - nexus-network
     command: sh -c "bunx prisma migrate deploy && node dist/main.js"
-
-# -------------------- Next.js Frontend --------------------
-frontend:
-  build:
-    context: .
-    dockerfile: Dockerfile
-  container_name: nexus-frontend
-  restart: unless-stopped
-  depends_on:
-    backend:
-      condition: service_healthy
-  environment:
-    NODE_ENV: production
-    PORT: 3000
-    NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
-  ports:
-    - "3000:3000"
-  networks:
-    - nexus-network
 
 volumes:
   postgres_data:

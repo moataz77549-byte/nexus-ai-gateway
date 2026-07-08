@@ -39,7 +39,12 @@ export const providersApi = {
 
 // ============ Models ============
 export const modelsApi = {
-  list: (_providerId?: string) => apiClient.get<Model[]>("/litellm/models"),
+  // Models are served via the LiteLLM proxy rather than the providers
+  // controller. When a providerId is supplied we still return all
+  // available models and let the client filter them. See
+  // backend/modules/litellm/litellm.controller.ts for details.
+  list: (providerId?: string) =>
+    apiClient.get<Model[]>("/litellm/models", providerId ? { params: { providerId } } : undefined),
 };
 
 // ============ API Keys ============

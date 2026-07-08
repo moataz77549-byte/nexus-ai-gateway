@@ -52,11 +52,34 @@ export const providerLogsQuerySchema = z.object({
 });
 export type ProviderLogsQueryDto = z.infer<typeof providerLogsQuerySchema>;
 
+// ============================================================
+// DYNAMIC PROVIDER MANAGEMENT
+// ============================================================
 
+/**
+ * Schema used to validate requests to create a new provider. Only the
+ * fields defined here are accepted by the controller. The `name` and
+ * `baseUrl` fields are required; all others are optional.
+ */
 export const createProviderSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  baseUrl: z.string().url().optional(),
+  baseUrl: z.string().min(1),
   region: z.string().optional(),
 });
 export type CreateProviderDto = z.infer<typeof createProviderSchema>;
+
+/**
+ * Schema used to validate provider update requests. At least one field
+ * must be provided. A partial update is allowed so all fields are
+ * optional here.
+ */
+export const updateProviderSchema = createProviderSchema.partial();
+export type UpdateProviderDto = z.infer<typeof updateProviderSchema>;
+
+/**
+ * Empty schema used for testConnection requests. This is intentionally
+ * left empty because the endpoint expects only the provider ID in the
+ * URL path.
+ */
+export const testConnectionSchema = z.object({});
