@@ -1,0 +1,12 @@
+.git
+node_modules
+backend/node_modules
+.next
+backend/dist
+coverage
+logs
+backend/logs
+*.log
+.env
+.env.local
+.DS_Store
