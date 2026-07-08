@@ -44,6 +44,7 @@ COPY --from=builder --chown=nexus:nexus /app/dist ./dist
 COPY --from=builder --chown=nexus:nexus /app/node_modules ./node_modules
 COPY --from=builder --chown=nexus:nexus /app/prisma ./prisma
 COPY --from=builder --chown=nexus:nexus /app/package.json ./
+COPY --from=builder --chown=nexus:nexus /app/start.sh ./
 
 # Create logs directory
 RUN mkdir -p /app/logs && chown -R nexus:nexus /app/logs
@@ -55,4 +56,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3001/health/live || exit 1
 
-CMD ["node", "dist/main.js"]
+CMD ["./start.sh"]
